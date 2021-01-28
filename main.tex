@@ -1,0 +1,323 @@
+\documentclass{article}
+
+\usepackage{arxiv}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{algpseudocode}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{subfig}
+\usepackage{csquotes}
+% \usepackage{lipsum}
+
+\title{REVISITING THE DETAILS WHEN EVALUATING A VISUAL TRACKER}
+
+
+\author{
+    Zan Huang \thanks{pls ping me using contact info on \url{https://github.com/pmixer} if interested in turning this technical report into a real paper.}\\
+    Somewhere on Earth \\
+    \texttt{huangzan@gatech.edu}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Visual tracking algorithms are naturally adopted in various applications, there have been several benchmarks and many tracking algorithms, more expected to appear in the future. In this report, I focus on single object tracking and revisit the details of tracker evaluation based on widely used OTB\cite{otb} benchmark by introducing a simpler, accurate, and extensible method for tracker evaluation and comparison. Experimental results suggest that there may not be an absolute winner among tracking algorithms. We have to perform detailed analysis to select suitable trackers for use cases.
+% Furthermore, we introduced a novel way to take siamese networks as scorer for selecting the proper tracker.
+\end{abstract}
+
+
+% keywords can be removed
+\keywords{Computer Vision \and Visual Tracking \and Benchmark \and Evaluation}
+
+\section{INTRODUCTION}
+\label{sec:intro}
+
+\begin{displayquote}
+Everything should be made as simple as possible, but not simpler. -\emph{Albert Einstein}
+\end{displayquote}
+
+This is part of my M.Eng. thesis work in which I focused on deep learning enabled single object tracking algorithms and identified some hidden details in OTB\cite{otb} based tracker evaluation. The content is bit deprecated as the work was done more than three years ago. I just want to share the idea as these details may have not been fully explained.
+
+In short, I show that the most commonly used area-under-curve(AUC) score of success plots in OTB\cite{otb} could be simplified to average-overlap-ratio(AOR) between tracker outputs and ground-truth bounding boxes. Based on AOR, we can design more succinct, accurate, and flexible tracker evaluation approach for more detailed analysis, to better address important features like robustness and select proper trackers for different applications.
+
+There is no absolute winner when comparing selected representative deep trackers in this report. As we will see later, there may be an upper bound for general AOR, but when we zoom in to compare AOR of a certain tracker on different tasks, the performance changes drastically. Even trackers of similar general performance, measured by overall AOR or AUC score, would behave quite differently for the same task. That shows the diversity of trackers.
+
+The report is for researchers and engineers who are working on visual tracking algorithms. The goal is to introduce AOR based method for tracker evaluation, prove the correctness and show the advantages. Also, due to the identified performance instability issue and diversity of visual trackers, I call for elaborating in tracker evaluation and comparison by fine-grained AOR based analysis, and considering combining distinct trackers for more robust visual tracking.
+
+\section{METRICS REVISITED}
+
+Fig.\ref{fig:plots} shows the example of precision plot and success plot used in OTB\cite{otb}, the precision plot is mainly used for comparing fixed scale trackers by only considering the box center distance between groundtruth and tracker output, the success plot AUC is more commonly used as the dominant factor for comparing trackers. In success plot, the x-axis set the threshold of groundtruth and tracker output bounding box overlap ratio, the y-axis show the percentage of success cases/frames filtered by corresponding threshold. AUC scores are computed according to the plot as the metric for measuring the performance of the tracker, higher AUC score often stands for better tracking performance. 
+
+\begin{figure}[htbp]%
+    \centering
+    % https://tex.stackexchange.com/questions/341164/argument-of-sfsubfloat-has-an-extra-what-is-it
+    \subfloat[][\centering Example Precision Plot.]{\includegraphics[width=7cm]{PP.png} }%
+    \qquad
+    \subfloat[][\centering Example Success Plot.]{\includegraphics[width=7cm]{SP.png} }%
+    \caption{Example Plots used in OTB\cite{otb}.}%
+    \label{fig:plots}%
+\end{figure}
+
+In this section, I show that AUC score is actually a bit inaccurate approximate of AOR on the whole testing dataset. As shown in Fig.\ref{fig:auc2aor}, if we map overlap ratios to columns of fixed width, use column height to represent the ratios and get them descendingly sorted(if non-overlap results exist for some frames, they would have overlap ratio of 0 and invisible on such bar chart).  We know that the curves shown on success plot are just smoothed line chart based on finite overlap ratio data points, and x-axis on Fig.\ref{fig:auc2aor} example bar chart corresponds y-axis on success plot while y-axis on the bar chart corresponds to x-axis on success plot, just interpreted differently. Based on basic calculus knowledge and in reference to Ferrers diagram\cite{ferrers}, we know that the AUC of success plot is equivalent to area of the bar chart shown in Fig.\ref{fig:auc2aor} which is AOR for the whole testing dataset.
+
+\begin{figure}
+  \centering
+%   \fbox{\rule[-.5cm]{4cm}{4cm} \rule[-.5cm]{4cm}{0cm}}
+  \subfloat{\includegraphics[width=9cm]{AUC2AOR.png}}
+  \caption{Example Chart of Descendingly Sorted Overlap Ratio.}
+  \label{fig:auc2aor}
+\end{figure}
+
+ Moreover, due to the implicit smoothness and continuous assumption of success plots curves which are inconsistent with real scenario, especially considering sampling errors when calculating AUC on OTB\cite{otb}, I argue that the AUC score shown on success plot is an inaccurate approximate of AOR. As AUC score is the dominant factor when comparing trackers, I suggest directly using AOR for tracker evaluation, saving pages of space in your paper to show more informative stuff and make it easier to compare trackers in fine-grained level.
+ 
+ In next section, I show how AOR based evaluation could help analysing and diagnosing trackers quantitatively which was hard to do as AUC is too coarse, curves are not informative enough and empirical analysis is sometimes subjective.
+
+
+\section{PROPOSED METHOD}
+\label{sec:method}
+
+\begin{displayquote}
+To measure is to know. If you cannot measure it you cannot improve it. -\emph{Lord Kelvin}
+\end{displayquote}
+
+After introducing AOR to replace AUC score, I show how AOR can be used extensively for detailed quantitative tracker analysis in this section. Video sequence level AOR could help us comparing trackers in different scenarios, which can further help us embracing the diversity of visual trackers. The generated sequence level AOR rank list can be used for comparing trackers quantitatively, by tracker-distance(TD) defined in this report.
+
+Fine-grained and creative use of AOR for tracker analysis, from statistically prospective(like using the variance of AOR to represent the versatility or robustness of the tracker) or adversarial attack view(by analysing failure cases identified by low AOR video sequence segment, we can actively trace the root cause of such failure, and finally create more cases for testing, also trying possible fixes for the tracker) are highly encouraged but not covered in this report.
+
+As visual object tracking benchmarks always consists of separate video sequences, I show how to use video sequence level AOR to explore selected tracker in the report and define tracker-distance(TD) based AOR rank list for measuring how different two trackers are. Meanwhile, One has the freedom to use AOR from frame level all the way to the whole dataset level for various statistically analysis.
+
+For tracking tasks $T_1, T_2, ..., T_n$ on different video sequences where $n$ is the task number on the benchmark, we can compute $AOR_{T_1}, AOR_{T_2}, ...., AOR_{T_n}$ separately, each corresponds the average overlap ratio on given task(i.e. for the task named "Diving" on OTB\cite{otb}, we need to track the diver in a competition using corresponding video clip and given initial bounding box), as $\textit{AOR} \in [0, 1]$, the higher AOR suggests better tracking performance. After sorting the AOR descendingly, we can get the rank list showing  for which task, the tracker performs best and visa versa. Concrete rank list would be like $L = \{\textit{Diving}, \textit{Jump}, ...\}$ which means the tracker performs best on \textit{Diving} task of OTB\cite{otb}.
+
+After getting the rank list for each tracker, we define the tracker-distance(TD) to quantitatively compare them. Assuming we have two rank lists $L_{\textit{tracker1}}, L_{\textit{tracker2}}$, in each of them, the element represent the tracking task(i.e. \emph{Diving}), if we assign numerical id to each task according to their rank in $L_{\textit{tracker1}}$, we can turn $L_{\textit{tracker1}}$ into $\{1, 2, ..., n\}$ and $L_{\textit{tracker2}}$ into something similar to $\{2, 7, ..., 1\}$. Finally, we can measure the difference of two tracker by counting the reverse pair number in transformed $L_{\textit{tracker2}}$, divided by maximum possible reverse pair number \frac{$n(n-1)}{2}$ to normalize the score.
+
+TD is useful for comparing tracker as we believe similar trackers would have similar performance for the same task, thus despite concrete AOR value, the obtained rank list should also be similar for these tracker. Based on this intuition, I picked reverse pair number to construct a tracker similarity indicator. It do not require manually classifying and labelling video sequences(i.e., tagging video with occlusion by OCC on OTB\cite{otb}) and provides useful information for tracker comparison. TD can also help saving words when comparing trackers in your paper.
+
+\section{EXPERIMENTAL RESULTS}
+\label{sec:results}
+
+
+Firstly, I show the necessarity of more detailed quantitatively tracker analysis by introducing an empirical bound of AOR on the whole testing dataset using another benchmark as hinted by Wang, the first author of SiamMask\cite{siammask}.
+
+VOT\cite{vot} is a well known visual tracking competition, VOT2015 and VOT2016 share the same video source but remarked groundtruth bounding boxes, replaced manually labelled ones with segmentation based bounding boxes to maximize the overlap ratio between the bounding boxes and real object area. I computed the AOR of these two sets of groundtruth.
+
+
+\begin{table}[htbp]
+  \centering
+  \caption{Average Overlap Ratio of VOT2015 and VOT2016 Groundtruth Bounding Boxes.}
+  \scalebox{0.9}{
+
+    \begin{tabular}{cccccccccc}
+    \toprule
+    Task&AOR&Task&AOR&Task&AOR&Task&AOR\\
+    \midrule
+    bolt2&0.770&bolt1&0.781&car2&0.857&car1&0.853\\
+    birds2&0.559&sphere&0.732&singer3&0.853&singer2&0.769\\
+    iceskater1&0.694&fish4&0.970&fish3&0.843&fish2&0.786\\
+    fish1&0.766&marching&0.995&sheep&0.830&ball1&0.755\\
+    ball2&0.670&basketball&0.722&matrix&0.795&soldier&0.794\\
+    pedestrian2&0.630&pedestrian1&0.819&graduate&0.740&handball1&0.876\\
+    book&0.843&helicopter&0.791&racing&0.788&butterfly&0.707\\
+    soccer1&0.844&soccer2&0.758&handball2&0.781&godfather&0.782\\
+    nature&0.738&octopus&0.741&blanket&0.726&hand&0.703\\
+    tiger&0.811&traffic&0.811&rabbit&0.711&bmx&0.777\\
+    motocross1&0.760&motocross2&0.726&gymnastics1&0.662&gymnastics3&0.729\\
+    gymnastics2&0.727&gymnastics4&0.654&girl&0.766&bag&0.781\\
+    tunnel&0.930&wiper&0.841&leaves&0.654&fernando&0.775\\
+    glove&0.665&dinosaur&0.758&iceskater2&0.738&singer1&0.857\\
+    crossing&0.839&shaking&0.809&road&0.723&birds1&0.901\\
+
+    \bottomrule
+    \end{tabular}%
+    }
+  \label{tab:vot1516overlap}%
+\end{table}%
+
+The raw AOR data is shown in Table.\ref{tab:vot1516overlap}, and overall AOR is $0.772$ for the whole dataset. Even groundtruth differs greatly from overlap prospective. I suspect that there is an empirical upper bound for overall performance of trackers on the benchmark. Instead of putting too much focus on the leaderboard, we need pay more attention to details, especially to failure cases and imbalanced performance issue for usability and robustness when general AOR is approaching $0.7$.
+
+Secondly, with GOTURN\cite{goturn}, SiameseFC\cite{siamesefc}, CFNet\cite{cfnet}, ECO\cite{eco}, STCT\cite{stct}, MDNet\cite{mdnet} picked
+for experiments, I show the imbalanced sequence level AOR issue which got ignored when we only comparing overall performance of given trackers on the whole dataset. Moreover, we can see the diversity of visual trackers by inspecting the issue.
+
+
+\begin{table} [htbp]%%
+%   \centering
+  % \linespread{0.1}
+  \caption{Partial Result of Descendingly Ranked Sequence Level Average Overlap Ratio of Selected Trackers on OTB.}
+%   \scalebox{0.75}{
+    \resizebox{\textwidth}{!}{
+    \begin{tabular}{cccccccccccc}
+      % \specialrule{0em}{0pt}{0pt}
+      % \linespread{1}
+    \toprule
+    % \multicolumn{2}{1}{
+    GOTURN&AOR&SiameseFC&AOR&CFNet&AOR&ECO&AOR&STCT&AOR&MDNet&AOR\\
+    \midrule
+%     Boy&0.803&BlurFace&0.875&Coupon&0.904&\textcolor[rgb]{0,0,1}{Car24}&0.907&CarDark&0.882&Car2&0.863\\
+% Dudek&0.802&Car2&0.865&CarDark&0.878&BlurCar2&0.901&BlurCar2&0.881&Dudek&0.862\\
+% Car4&0.800&BlurCar1&0.848&Liquor&0.867&Liquor&0.883&BlurCar4&0.867&BlurCar2&0.857\\
+% Shaking&0.794&Dog1&0.841&Man&0.862&BlurCar4&0.880&Car2&0.866&BlurCar4&0.854\\
+% Man&0.793&\textcolor[rgb]{0,0,1}{Car24}&0.836&BlurCar4&0.858&Car2&0.878&Human7&0.849&Doll&0.853\\
+% \textcolor[rgb]{0,0,1}{Car24}&0.769&BlurCar2&0.830&BlurCar2&0.852&CarDark&0.878&Man&0.843&Fish&0.848\\
+% Freeman3&0.756&Dudek&0.827&Fish&0.842&Car4&0.871&Car4&0.840&BlurCar3&0.839\\
+% Car2&0.741&BlurOwl&0.826&Trellis&0.841&BlurCar1&0.869&BlurCar1&0.838&Liquor&0.835\\
+% Human2&0.738&Doll&0.815&BlurFace&0.830&Fish&0.866&BlurCar3&0.837&Man&0.834\\
+% MountainBike&0.734&Man&0.809&\textcolor[rgb]{0,0,1}{Car24}&0.813&Boy&0.866&BlurFace&0.833&Board&0.831\\
+% CarScale&0.734&Mhyang&0.808&BlurCar3&0.811&BlurCar3&0.866&Board&0.825&BlurCar1&0.823\\
+% Fish&0.724&BlurCar3&0.805&Jogging-1&0.796&BlurFace&0.865&Mhyang&0.821&Human7&0.821\\
+% FleetFace&0.723&BlurCar4&0.804&Crossing&0.790&Singer1&0.865&Fish&0.819&Mhyang&0.819\\
+% Jogging-2&0.722&Car1&0.796&Boy&0.787&Doll&0.863&Human5&0.807&Boy&0.817\\
+% Trellis&0.695&Singer1&0.785&Car4&0.787&Dudek&0.861&Trellis&0.805&BlurFace&0.816\\
+% Skater&0.693&Freeman3&0.781&Dudek&0.779&Car1&0.856&Walking2&0.803&Dog1&0.808\\
+% Mhyang&0.690&Boy&0.780&Crowds&0.778&Human7&0.849&Liquor&0.798&Singer1&0.808\\
+% Walking&0.679&Dancer&0.776&Freeman3&0.776&David&0.847&Dog1&0.798&Walking2&0.795\\
+% Biker&0.676&Car4&0.772&FaceOcc2&0.770&Mhyang&0.838&Car1&0.796&Dancer2&0.789\\
+% Freeman1&0.674&CarScale&0.771&Car2&0.769&Dog1&0.836&Jogging-1&0.794&\textcolor[rgb]{0,0,1}{Car24}&0.789\\
+% Skater2&0.664&David2&0.770&Walking2&0.767&Human9&0.834&BlurOwl&0.794&Trellis&0.784\\
+% Dancer2&0.662&Deer&0.769&Woman&0.766&BlurOwl&0.830&Bird2&0.782&Car1&0.783\\
+% Human6&0.625&Suv&0.766&Dancer2&0.756&David2&0.830&Dudek&0.780&David&0.781\\
+% Human5&0.617&Shaking&0.763&Board&0.754&Human5&0.819&BasketBall&0.777&BlurBody&0.780\\
+% Lemming&0.613&Crossing&0.760&Rubik&0.754&Lemming&0.814&Lemming&0.774&Freeman3&0.778\\
+% Skating1&0.606&Fish&0.755&Dancer&0.746&Bird2&0.814&Human6&0.769&FleetFace&0.769\\
+% FaceOcc2&0.606&FaceOcc1&0.752&BlurCar1&0.745&Man&0.810&Singer1&0.769&Car4&0.766\\
+% Couple&0.591&MountainBike&0.749&Deer&0.741&Rubik&0.807&Crossing&0.763&FaceOcc2&0.760\\
+% Vase&0.588&Jogging-2&0.748&David2&0.740&Crossing&0.805&Bolt&0.763&CarDark&0.757\\
+% BlurFace&0.569&Dancer2&0.742&David&0.735&Board&0.802&Human9&0.761&Surfer&0.750\\
+% Crowds&0.542&Jogging-1&0.737&Doll&0.735&Human6&0.802&Deer&0.761&Woman&0.748\\
+% Human9&0.541&Bird2&0.734&Human7&0.733&FaceOcc1&0.801&Suv&0.758&Jogging-2&0.742\\
+% Skiing&0.537&Human5&0.734&BlurBody&0.731&Jogging-1&0.801&Walking&0.756&Bird2&0.742\\
+% FaceOcc1&0.537&Human7&0.730&Girl&0.730&Walking2&0.796&FaceOcc2&0.755&Football1&0.739\\
+\textcolor[rgb]{0,1,0}{Diving}&0.528&Human2&0.727&Walking&0.719&Girl&0.795&David3&0.753&Human5&0.735\\
+% Surfer&0.527&Subway&0.726&MountainBike&0.714&Human2&0.794&David&0.753&Sylvester&0.733\\
+% Jumping&0.527&Girl&0.725&Shaking&0.714&Dancer&0.790&Dancer&0.753&David3&0.731\\
+% MotorRolling&0.508&Human6&0.722&BasketBall&0.712&Suv&0.789&Subway&0.749&Jumping&0.729\\
+% David&0.504&Crowds&0.719&Mhyang&0.710&Shaking&0.789&Human2&0.744&Girl&0.728\\
+% BlurCar2&0.503&Walking&0.712&Bolt2&0.700&Deer&0.788&Dancer2&0.742&MountainBike&0.722\\
+% Girl&0.502&Jumping&0.706&BlurOwl&0.695&Freeman3&0.788&Jogging-2&0.739&DragonBaby&0.722\\
+% Skating2-2&0.494&FaceOcc2&0.706&Dog1&0.688&Woman&0.786&Rubik&0.733&Dancer&0.720\\
+% Coke&0.485&David&0.705&David3&0.686&CarScale&0.786&CarScale&0.727&Freeman1&0.715\\
+% Gym&0.484&Biker&0.705&Human5&0.680&Human8&0.778&Couple&0.727&Walking&0.715\\
+% Dancer&0.475&Sylvester&0.701&Human6&0.679&Trellis&0.768&BlurBody&0.724&Lemming&0.714\\
+% DragonBaby&0.453&KiteSurf&0.682&Singer1&0.676&David3&0.766&Doll&0.718&Crossing&0.704\\
+% Singer1&0.450&Lemming&0.680&Bird2&0.674&Box&0.766&Box&0.715&Human8&0.703\\
+% Football1&0.445&Surfer&0.673&Jogging-2&0.667&KiteSurf&0.761&FaceOcc1&0.713&Human2&0.703\\
+% Twinnings&0.444&Freeman4&0.669&RedTeam&0.664&Singer2&0.754&Boy&0.711&Jogging-1&0.699\\
+% David2&0.441&BlurBody&0.668&CarScale&0.644&BasketBall&0.752&Human8&0.699&Shaking&0.699\\
+% Toy&0.437&Skater&0.668&FleetFace&0.640&FaceOcc2&0.751&Bolt2&0.689&Singer2&0.698\\
+% David3&0.428&Trellis&0.667&Skater&0.636&Girl2&0.750&Shaking&0.682&David2&0.696\\
+% Trans&0.424&Panda&0.665&Sylvester&0.620&FleetFace&0.746&Woman&0.673&Bolt2&0.695\\
+% Panda&0.421&RedTeam&0.660&Toy&0.614&Dancer2&0.744&Crowds&0.667&Rubik&0.694\\
+% Dog1&0.400&Couple&0.622&Human4-2&0.613&Walking&0.737&\textcolor[rgb]{0,0,1}{Car24}&0.661&FaceOcc1&0.693\\
+% Tiger2&0.394&Skater2&0.612&Panda&0.611&RedTeam&0.734&David2&0.660&Bolt&0.693\\
+% Bolt2&0.386&Box&0.603&Bolt&0.600&Jumping&0.727&Sylvester&0.657&Subway&0.687\\
+% Human7&0.369&Matrix&0.587&Human8&0.592&Jogging-2&0.724&Human4-2&0.648&KiteSurf&0.686\\
+% Coupon&0.367&David3&0.586&Human2&0.581&BlurBody&0.722&Singer2&0.648&Deer&0.683\\
+% KiteSurf&0.366&Trans&0.579&Car1&0.566&DragonBaby&0.721&Toy&0.636&Twinnings&0.681\\
+% Suv&0.365&Rubik&0.567&Skater2&0.549&Crowds&0.716&Jumping&0.632&Toy&0.678\\
+% BasketBall&0.358&Vase&0.554&Dog&0.547&Surfer&0.702&Skating1&0.631&Tiger1&0.677\\
+% Liquor&0.352&Tiger1&0.522&FaceOcc1&0.546&MountainBike&0.699&MountainBike&0.607&Human6&0.676\\
+% Sylvester&0.339&Toy&0.516&Trans&0.538&Toy&0.698&Football&0.606&ClifBar&0.674\\
+% Skating2-1&0.309&Twinnings&0.511&Freeman4&0.532&Subway&0.690&Human3&0.606&Skater2&0.667\\
+% Walking2&0.283&Gym&0.507&Couple&0.528&Football&0.685&FleetFace&0.602&Freeman4&0.659\\
+% BlurBody&0.268&Walking2&0.489&Skating1&0.527&Tiger2&0.677&Freeman1&0.589&Human4-2&0.653\\
+% RedTeam&0.262&Tiger2&0.473&Football&0.522&Couple&0.668&Twinnings&0.565&Suv&0.652\\
+% Deer&0.260&FleetFace&0.471&Coke&0.520&Tiger1&0.668&KiteSurf&0.564&BasketBall&0.646\\
+% Dog&0.255&Football1&0.469&Twinnings&0.511&Human4-2&0.649&Tiger1&0.562&Tiger2&0.637\\
+% Rubik&0.249&Skiing&0.467&Vase&0.505&Sylvester&0.648&Coke&0.556&Skating1&0.631\\
+% Ironman&0.234&Woman&0.457&Gym&0.498&Bolt&0.636&Skater2&0.554&CarScale&0.622\\
+% Human8&0.210&DragonBaby&0.433&Surfer&0.496&Twinnings&0.631&Freeman3&0.540&Skater&0.597\\
+% Freeman4&0.209&Skating2-2&0.428&Biker&0.494&Human3&0.625&Trans&0.533&Couple&0.594\\
+% BlurCar4&0.197&Ironman&0.428&Suv&0.491&Soccer&0.615&Skater&0.525&Girl2&0.592\\
+% Crossing&0.188&CarDark&0.418&Skating2-1&0.447&Matrix&0.596&Vase&0.522&Human9&0.592\\
+% Bird2&0.186&Dog&0.413&Football1&0.446&Skater2&0.584&RedTeam&0.515&RedTeam&0.590\\
+% Jogging-1&0.172&Coke&0.407&Tiger2&0.421&ClifBar&0.584&MotorRolling&0.508&MotorRolling&0.575\\
+% ClifBar&0.157&Liquor&0.400&KiteSurf&0.403&Skater&0.572&Girl&0.494&Panda&0.574\\
+% Matrix&0.153&BasketBall&0.398&Skating2-2&0.373&Dog&0.565&Gym&0.481&Skating2-2&0.573\\
+% Football&0.143&Bolt2&0.374&Box&0.352&Bolt2&0.563&Skating2-2&0.480&Trans&0.564\\
+% Car1&0.136&Freeman1&0.355&ClifBar&0.345&Coke&0.541&Football1&0.478&Coke&0.546\\
+% Girl2&0.130&Skating1&0.353&Freeman1&0.343&Vase&0.537&Coupon&0.477&Skating2-1&0.530\\
+% Box&0.129&Girl2&0.352&Bird1&0.281&Freeman1&0.529&Tiger2&0.470&Skiing&0.517\\
+\textcolor[rgb]{1,0,0}{Jump}&0.126&MotorRolling&0.345&DragonBaby&0.254&Freeman4&0.529&Skating2-1&0.469&Human3&0.515\\
+BlurOwl&0.115&Human9&0.341&Lemming&0.213&Skating1&0.529&Surfer&0.447&BlurOwl&0.493\\
+Board&0.102&Skating2-1&0.325&Matrix&0.209&Football1&0.513&Biker&0.424&Gym&0.475\\
+Tiger1&0.101&ClifBar&0.288&Subway&0.192&Biker&0.510&DragonBaby&0.412&Vase&0.463\\
+Woman&0.101&Coupon&0.240&Soccer&0.176&Skiing&0.491&ClifBar&0.389&Dog&0.461\\
+Doll&0.097&Football&0.237&MotorRolling&0.164&Trans&0.485&\textcolor[rgb]{0,1,0}{Diving}&0.381&Ironman&0.444\\
+BlurCar1&0.087&Soccer&0.173&Ironman&0.162&Gym&0.476&Dog&0.360&Soccer&0.415\\
+Soccer&0.085&Human4-2&0.161&Human9&0.162&Skating2-1&0.475&Panda&0.300&Bird1&0.393\\
+BlurCar3&0.082&Bird1&0.145&Tiger1&0.146&Ironman&0.407&\textcolor[rgb]{1,0,0}{Jump}&0.274&\textcolor[rgb]{0,1,0}{Diving}&0.380\\
+Subway&0.076&\textcolor[rgb]{0,1,0}{Diving}&0.127&\textcolor[rgb]{0,1,0}{Diving}&0.108&Coupon&0.381&Freeman4&0.267&Biker&0.372\\
+Human4-2&0.062&Board&0.122&Skiing&0.107&Skating2-2&0.352&Soccer&0.207&Coupon&0.338\\
+Bird1&0.055&Human8&0.072&\textcolor[rgb]{1,0,0}{Jump}&0.097&\textcolor[rgb]{0,1,0}{Diving}&0.322&Matrix&0.194&Box&0.333\\
+Singer2&0.051&\textcolor[rgb]{1,0,0}{Jump}&0.065&Girl2&0.065&Panda&0.317&Skiing&0.092&Matrix&0.279\\
+CarDark&0.050&Singer2&0.038&Jumping&0.063&Bird1&0.180&Girl2&0.069&Football&0.140\\
+Human3&0.026&Human3&0.013&Singer2&0.040&MotorRolling&0.092&Ironman&0.063&Crowds&0.094\\
+Bolt&0.006&Bolt&0.011&Human3&0.008&\textcolor[rgb]{1,0,0}{Jump}&0.039&Bird1&0.030&\textcolor[rgb]{1,0,0}{Jump}&0.082\\
+    \bottomrule
+    \end{tabular}%
+    }
+  \label{tab:avgoverlapvalues}%
+\end{table}%
+
+% 又应了换模型不如换数据造成的差异大, 从细化的评价开始 re-search 很有意义
+Table.\ref{tab:avgoverlapvalues} contains partial results of rank lists for each selected tracker(only retain the best performing tasks and worse performing tasks to make the table shorter). The highest AOR is way better than worse AOR for each tracker which suggests that the performance of trackers is unstable, while these low performing tasks commonly corresponds to shorter video sequences, which means even trackers performs terrible for these tasks, it could be easily ignored due to their low weights when contributing the overall AOR or AUC score. We need to report average of video sequence level AORs(AoAOR) when presenting visual tracker claiming being able to handle various objects in different scenarios.
+
+Moreover, like what is shown by colored entries in Table.\ref{tab:avgoverlapvalues}, GOTURN\cite{goturn} which generally performs worse when comparing with other trackers do have much better performance for tasks like \emph{Diving} and \emph{Jump}. When measuring the TD of selected trackers, as presented in Table.\ref{tab:trackerdist}, we can see that GOTURN\cite{goturn} is indeed more different from other trackers, the TD of GOTURN\cite{goturn} to other trackers are marginally larger than other entries.
+
+\begin{table*}[htbp]%[!ht]
+  \centering
+  \caption{Tracker Distance($TD$) Comparison.}
+  % \scalebox{1.2}{
+
+    \begin{tabular}{ccccccc}
+    \toprule
+    &GOTURN&SiameseFC&CFNet&ECO&STCT&MDNet\\
+    \midrule
+    GOTURN& 0.0&  0.353&  0.421&  0.458&  0.462&  0.417\\
+    \midrule
+    SiameseFC& 0.353&  0.0&  0.295&  0.251&  0.301&  0.288\\
+    \midrule
+    CFNet& 0.421&  0.295&  0.0&  0.258&  0.252&  0.261\\
+    \midrule
+    ECO& 0.458&  0.251&  0.258&  0.0&  0.182&  0.220\\
+    \midrule
+    STCT& 0.462&  0.301&  0.252&  0.182&  0.0&  0.242\\
+    \midrule
+    MDNet& 0.417&  0.288&  0.261&  0.220&  0.242&  0.0\\
+    \bottomrule
+    \end{tabular}%
+    % }
+  \label{tab:trackerdist}%
+\end{table*}%
+
+As I showed the single tracker performance instability issue and the diversity of trackers, it is obviously better trying to combine distinct trackers for more robust visual tracking than just claiming some of them can well handle all tracking tasks independent of the object and scenario. But this topic is underexplored according to my limited knowledge.
+
+
+% \pagebreak
+
+
+\section{CONCLUSION}
+\label{sec:conclusion}
+
+OTB\cite{otb} proposed evaluation metric is still widely used, while newer benchmarks already practiced using average overlap ratio for simplicity. The report is for encouraging the use of AOR over classical OTB\cite{otb} plots with theoretical basis to increase information intensity in related papers, so we can perform deeper discussion on tracker evaluation.
+
+
+AOR based tracker evaluation method is more intuitive, accurate, and flexible, supporting multi level tracker performance inspection, from single frame level all the way to the whole testing dataset level evaluation, and the generated numbers are more statistical analysis friendly, which is good for research and industry-use-oriented engineering.
+
+I gave an empirical upper bound for overall average overlap ratio, introduced the tracker performance instability issue, showed the diversity of trackers as revealed by TD measure, identified the formerly ignored short-sequence-bad-performance problem. All supported by proposed AOR based tracker evaluation.
+
+
+The idea of coarse-to-fine evaluation is not limited to visual tracking research, it could be easily extended to diagnose other kinds of models, like detectors etc. The main idea is to identify and address the imbalanced performance issue and embrace diversity of formerly proposed models. To escape the involution, take research outcomes to production.
+
+\bibliographystyle{unsrt}  
+\bibliography{main}
+
+\end{document}
