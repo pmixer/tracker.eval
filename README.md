@@ -35,5 +35,11 @@ Tex source(based on AWESOME https://github.com/kourgeorge/arxiv-style) and some 
 Collaborators interested in turning this report into a real paper are more than welcomed.
 
 ```bibtex
-
+@article{huangtrackereval,
+  title={Revisiting the Details when Evaluating a Visual Tracker},
+  author={Huang, Zan},
+  journal={arXiv preprint arXiv:2102.06733},
+  year={2021},
+  url={https://github.com/pmixer/tracker.eval/}
+}
 ```
